@@ -1,8 +1,13 @@
+import ast
+import typing
 import warnings
+from enum import Enum
 
 import numpy as np
 import pandas as pd
+from loguru import logger
 
+from FinMind import indicators
 from FinMind.data import DataLoader
 from FinMind.schema import (
     CompareMarketDetail,
@@ -11,6 +16,12 @@ from FinMind.schema import (
     TradeDetail,
 )
 from FinMind.schema.data import Dataset
+from FinMind.schema.indicators import (
+    AddBuySellRule,
+    AdditionalDataset,
+    IndicatorsInfo,
+    IndicatorsParams,
+)
 from FinMind.strategies.utils import (
     calculate_datenbr,
     calculate_sharp_ratio,
@@ -19,6 +30,7 @@ from FinMind.strategies.utils import (
     get_underlying_trading_tax,
     period_return2annual_return,
 )
+from FinMind.utility.rule import RULE_DICT
 
 
 class Trader:
@@ -86,6 +98,14 @@ class Trader:
     def no_action(self, trade_price: float):
         self.trade_price = trade_price
         self.__compute_realtime_status()
+
+    def trade(self, signal: float, trade_price: float):
+        if signal > 0:
+            self.buy(trade_price=trade_price, trade_lots=signal)
+        elif signal < 0:
+            self.sell(trade_price=trade_price, trade_lots=signal)
+        else:
+            self.no_action(trade_price=trade_price)
 
     def __compute_realtime_status(self):
         sell_fee = max(20, self.trade_price * self.hold_volume * self.fee)
@@ -183,8 +203,9 @@ class BackTest:
         fee: float = 0.001425,
         strategy: Strategy = None,
         data_loader: DataLoader = None,
+        token: str = "",
     ):
-        self.data_loader = data_loader
+        self.data_loader = data_loader if data_loader else DataLoader(token)
         self.stock_id = stock_id
         self.start_date = start_date
         self.end_date = end_date
@@ -205,6 +226,9 @@ class BackTest:
         self.stock_price = pd.DataFrame()
         self._trade_detail = pd.DataFrame()
         self._final_stats = pd.Series()
+        self._sign_name_list = []
+        self.buy_rule_list = []
+        self.sell_rule_list = []
         self.__init_base_data()
         self._trade_period_years = days2years(
             calculate_datenbr(start_date, end_date) + 1
@@ -215,6 +239,237 @@ class BackTest:
 
     def add_strategy(self, strategy: Strategy):
         self.strategy = strategy
+
+    def _add_indicators_formula(
+        self,
+        indicator: str,
+        indicators_info: typing.Dict[str, typing.Union[str, int, float]],
+    ):
+        value = indicators_info.pop("formula_value", None)
+        if value:
+            if isinstance(value, list):
+                params_list = ast.literal_eval(
+                    getattr(IndicatorsParams, indicator).value
+                )
+                [
+                    indicators_info.update({params: value.pop(0)})
+                    for params in params_list
+                ]
+            else:
+                indicators_info.update(
+                    {getattr(IndicatorsParams, indicator).value: value}
+                )
+        return indicators_info
+
+    def _convert_indicators_schema2dict(
+        self,
+        indicators_info: typing.Union[IndicatorsInfo, typing.Dict[str, str]],
+    ):
+        indicators_info = (
+            indicators_info.dict()
+            if isinstance(indicators_info, IndicatorsInfo)
+            else indicators_info
+        )
+        indicator = (
+            indicators_info["name"].name
+            if isinstance(indicators_info["name"], Enum)
+            else indicators_info["name"]
+        )
+        return indicators_info, indicator
+
+    def add_indicators(
+        self,
+        indicators_info_list: typing.List[IndicatorsInfo],
+    ):
+        """add indicators
+        :param indicators_info_list (List[FinMind.schema.indicators.IndicatorsInfo]):
+
+        For example1: if add KD indicators, and set k_days=9
+
+        [
+            IndicatorsInfo(
+                indicators=Indicators.KD,
+                formula_value=9
+            )
+        ]
+
+        For example2: if add BIAS indicators, and set ma_days=24
+
+        [
+            IndicatorsInfo(
+                indicators=Indicators.BIAS,
+                formula_value=24
+            )
+        ]
+        """
+        for indicators_info in indicators_info_list:
+            indicators_info, indicator = self._convert_indicators_schema2dict(
+                indicators_info
+            )
+            self._additional_dataset(indicator=indicator)
+            logger.info(indicator)
+            indicators_info = self._add_indicators_formula(
+                indicator, indicators_info
+            )
+            func = indicators.INDICATORS_MAPPING.get(indicator)
+            self.stock_price = func(
+                self.stock_price, additional_dataset_obj=self, **indicators_info
+            )
+
+    def __convert_rule_schema2dict(
+        self,
+        rule_list: typing.List[
+            typing.Union[AddBuySellRule, typing.Dict[str, str]]
+        ],
+    ):
+        return [
+            rule.dict() if isinstance(rule, AddBuySellRule) else rule
+            for rule in rule_list
+        ]
+
+    def add_buy_rule(
+        self,
+        buy_rule_list: typing.List[AddBuySellRule],
+    ):
+        """add buy rule
+        :param buy_rule_list (List[FinMind.schema.indicators.AddBuySellRule]):
+
+        For example: if BIAS <= -7, then buy stock
+
+        [
+            AddBuySellRule(
+                indicators=Indicators.BIAS,
+                more_or_less_than=Rule.LessThan,
+                threshold=-7,
+            )
+        ]
+
+        or
+
+        [
+            AddBuySellRule(
+                indicators=Indicators.BIAS,
+                more_or_less_than="<",
+                threshold=-7,
+            )
+        ]
+        """
+        self.buy_rule_list = self.__convert_rule_schema2dict(buy_rule_list)
+
+    def add_sell_rule(
+        self,
+        sell_rule_list: typing.List[AddBuySellRule],
+    ):
+        """add sell rule
+        :param sell_rule_list (List[FinMind.schema.indicators.AddBuySellRule]):
+
+        For example: if BIAS >= 8, then sell stock
+
+        [
+            AddBuySellRule(
+                indicators=Indicators.BIAS,
+                more_or_less_than=Rule.MoreThan,
+                threshold=8,
+            )
+        ]
+
+        or
+
+        [
+            AddBuySellRule(
+                indicators=Indicators.BIAS,
+                more_or_less_than=">",
+                threshold=8,
+            )
+        ]
+        """
+        self.sell_rule_list = self.__convert_rule_schema2dict(sell_rule_list)
+
+    def _create_sign(
+        self,
+        sign_name: str,
+        indicators: str,
+        more_or_less_than: str,
+        threshold: float,
+    ):
+        self.stock_price[sign_name] = 0
+        self.stock_price.loc[
+            self.stock_price[indicators].map(
+                lambda _indicators: RULE_DICT[more_or_less_than](
+                    _indicators, threshold
+                )
+            ),
+            sign_name,
+        ] = 1
+
+    def _create_buy_sign(self):
+        if len(self.buy_rule_list) > 0:
+            self._sign_name_list.append("buy_sign")
+            buy_sign_name_list = []
+            for i in range(len(self.buy_rule_list)):
+                sign_name = f"buy_signal_{i}"
+                buy_sign_name_list.append(sign_name)
+                self._create_sign(
+                    sign_name=sign_name,
+                    indicators=self.buy_rule_list[i]["indicators"],
+                    more_or_less_than=self.buy_rule_list[i][
+                        "more_or_less_than"
+                    ],
+                    threshold=self.buy_rule_list[i]["threshold"],
+                )
+            # if all of buy_sign_i are 1, then set buy_sign = 1
+            self.stock_price["buy_sign"] = (
+                self.stock_price[buy_sign_name_list].sum(axis=1)
+                == len(buy_sign_name_list)
+            ).astype(int)
+            self.stock_price = self.stock_price.drop(buy_sign_name_list, axis=1)
+
+    def _create_sell_sign(self):
+        if len(self.sell_rule_list) > 0:
+            self._sign_name_list.append("sell_sign")
+            sell_sign_name_list = []
+            for i in range(len(self.sell_rule_list)):
+                sign_name = f"sell_signal_{i}"
+                sell_sign_name_list.append(sign_name)
+                self._create_sign(
+                    sign_name=sign_name,
+                    indicators=self.sell_rule_list[i]["indicators"],
+                    more_or_less_than=self.sell_rule_list[i][
+                        "more_or_less_than"
+                    ],
+                    threshold=self.sell_rule_list[i]["threshold"],
+                )
+            # if all of sell_sign_i are 1, then set sell_sign = 1
+            self.stock_price["sell_sign"] = (
+                self.stock_price[sell_sign_name_list].sum(axis=1)
+                == len(sell_sign_name_list)
+            ).astype(int) * -1
+            self.stock_price = self.stock_price.drop(
+                sell_sign_name_list, axis=1
+            )
+
+    def _create_trade_sign(self):
+        logger.info("create_trade_sign")
+        self._create_buy_sign()
+        self._create_sell_sign()
+        self.stock_price["signal"] = self.stock_price[self._sign_name_list].sum(
+            axis=1
+        )
+        self.stock_price.loc[self.stock_price["signal"] >= 1, "signal"] = 1
+        self.stock_price.loc[self.stock_price["signal"] <= -1, "signal"] = -1
+        self.stock_price = self.stock_price.drop(self._sign_name_list, axis=1)
+
+    def _additional_dataset(self, indicator: str):
+        additional_dataset = getattr(AdditionalDataset, indicator, None)
+        if additional_dataset:
+            if getattr(self, additional_dataset.value, None) is None:
+                df = self.data_loader.get_data(
+                    dataset=additional_dataset,
+                    data_id=self.stock_id,
+                    start_date=self.start_date,
+                    end_date=self.end_date,
+                )
+                setattr(self, additional_dataset.value, df)
 
     def __init_base_data(self):
         self.stock_price = self.data_loader.get_data(
@@ -263,26 +518,30 @@ class BackTest:
             self.stock_price["CashEarningsDistribution"] = 0
 
     def simulate(self):
-        strategy = self.strategy(
-            self.trader,
-            self.stock_id,
-            self.start_date,
-            self.end_date,
-            self.data_loader,
-        )
-        strategy.load_strategy_data()
-        self.stock_price = strategy.create_trade_sign(
-            stock_price=self.stock_price
-        )
-        assert (
-            "signal" in self.stock_price.columns
-        ), "Must be create signal columns in stock_price"
+        if self.strategy:
+            strategy = self.strategy(
+                self.trader,
+                self.stock_id,
+                self.start_date,
+                self.end_date,
+                self.data_loader,
+            )
+            strategy.load_strategy_data()
+            self.stock_price = strategy.create_trade_sign(
+                stock_price=self.stock_price, additional_dataset_obj=self
+            )
+            assert (
+                "signal" in self.stock_price.columns
+            ), "Must be create signal columns in stock_price"
+        else:
+            self._create_trade_sign()
         if not self.stock_price.index.is_monotonic_increasing:
             warnings.warn(
                 "data index is not sorted in ascending order. Sorting.",
                 stacklevel=2,
             )
             self.stock_price = self.stock_price.sort_index()
+        _trade_detail_dict_list = []
         for i in range(0, len(self.stock_price)):
             # use last date to decide buy or sell or nothing
             last_date_index = i - 1
@@ -290,22 +549,23 @@ class BackTest:
                 self.stock_price.loc[last_date_index, "signal"] if i != 0 else 0
             )
             trade_price = self.stock_price.loc[i, "open"]
-            strategy.trade(signal, trade_price)
+            # 買賣之前，先進行配息配股
             cash_div = self.stock_price.loc[i, "CashEarningsDistribution"]
             stock_div = self.stock_price.loc[i, "StockEarningsDistribution"]
-            self.__compute_div_income(strategy.trader, cash_div, stock_div)
-            dic_value = strategy.trader.__dict__
-            dic_value = {
-                k: v for k, v in dic_value.items() if k not in ["tax", "fee"]
-            }
-            dic_value["date"] = self.stock_price.loc[i, "date"]
-            dic_value["signal"] = signal
-            dic_value["CashEarningsDistribution"] = cash_div
-            dic_value["StockEarningsDistribution"] = stock_div
-            self._trade_detail = self._trade_detail.append(
-                dic_value, ignore_index=True
+            self.__compute_div_income(self.trader, cash_div, stock_div)
+            self.trader.trade(signal, trade_price)
+            _trade_detail_dict_list.append(
+                dict(
+                    CashEarningsDistribution=cash_div,
+                    StockEarningsDistribution=stock_div,
+                    signal=signal,
+                    **self.trader.__dict__,
+                )
             )
 
+        self._trade_detail = pd.DataFrame(_trade_detail_dict_list)
+        self._trade_detail["date"] = self.stock_price["date"]
+        self._trade_detail = self._trade_detail.drop(["fee", "tax"], axis=1)
         self._trade_detail["EverytimeTotalProfit"] = (
             self._trade_detail["trader_fund"]
             + self._trade_detail["EverytimeProfit"]
@@ -315,23 +575,39 @@ class BackTest:
 
     @staticmethod
     def __compute_div_income(trader, cash_div: float, stock_div: float):
+        # 股票股利畸零股應被直接換算成現金
         gain_stock_div = stock_div * trader.hold_volume / 10
-        gain_cash = cash_div * trader.hold_volume
-        origin_cost = trader.hold_cost * trader.hold_volume
+        gain_stock_frac = gain_stock_div % 1  # 取 gain_stock_div 小數部分
+        gain_stock_div = (
+            gain_stock_div - gain_stock_frac
+        )  # gain_stock_div 只留整數部分
+        gain_cash = (
+            cash_div * trader.hold_volume + gain_stock_frac * 10
+        )  # 將小數部分加進 gain_cash
         trader.hold_volume += gain_stock_div
-        new_cost = origin_cost - gain_cash
+        # 在 UnrealizedProfit & RealizedProfit
+        # 避免重複計算 gain_cash
+        origin_cost = trader.hold_cost * trader.hold_volume
+        # 持有成本不變，將配息歸類在，已實現損益
+        # new_cost = origin_cost - gain_cash
         trader.hold_cost = (
-            new_cost / trader.hold_volume if trader.hold_volume != 0 else 0
+            origin_cost / trader.hold_volume if trader.hold_volume != 0 else 0
         )
-        trader.UnrealizedProfit = round(
-            (
-                trader.trade_price * (1 - trader.tax - trader.fee)
-                - trader.hold_cost
+        trader.UnrealizedProfit = (
+            round(
+                (
+                    trader.trade_price * (1 - trader.tax - trader.fee)
+                    - trader.hold_cost
+                )
+                * trader.hold_volume,
+                2,
             )
-            * trader.hold_volume,
-            2,
+            if trader.trade_price
+            else 0
         )
         trader.RealizedProfit += gain_cash
+        # 將配息也要增加資金池
+        trader.trader_fund += gain_cash
         trader.EverytimeProfit = trader.RealizedProfit + trader.UnrealizedProfit
 
     def __compute_final_stats(self):
@@ -420,14 +696,14 @@ class BackTest:
         ]
 
     @property
-    def final_stats(self) -> pd.Series():
+    def final_stats(self) -> pd.Series:
         self._final_stats = pd.Series(
             FinalStats(**self._final_stats.to_dict()).dict()
         )
         return self._final_stats
 
     @property
-    def trade_detail(self) -> pd.DataFrame():
+    def trade_detail(self) -> pd.DataFrame:
         self._trade_detail = pd.DataFrame(
             [
                 TradeDetail(**row_dict).dict()
@@ -437,7 +713,7 @@ class BackTest:
         return self._trade_detail
 
     @property
-    def compare_market_detail(self) -> pd.DataFrame():
+    def compare_market_detail(self) -> pd.DataFrame:
         self._compare_market_detail = pd.DataFrame(
             [
                 CompareMarketDetail(**row_dict).dict()
@@ -447,7 +723,7 @@ class BackTest:
         return self._compare_market_detail
 
     @property
-    def compare_market_stats(self) -> pd.Series():
+    def compare_market_stats(self) -> pd.Series:
         self._compare_market_stats = pd.Series(
             CompareMarketStats(**self._compare_market_stats.to_dict()).dict()
         )
@@ -461,8 +737,8 @@ class BackTest:
         grid: bool = True,
     ):
         try:
-            import matplotlib.pyplot as plt
             import matplotlib.gridspec as gridspec
+            import matplotlib.pyplot as plt
         except ImportError:
             raise ImportError("You must install matplotlib to plot importance")
 
