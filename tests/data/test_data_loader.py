@@ -1,10 +1,11 @@
+import datetime
 import os
 
 import pandas as pd
 import pytest
+from loguru import logger
 
-from FinMind.data import DataLoader
-from FinMind.data import FinMindApi
+from FinMind.data import DataLoader, FinMindApi
 
 user_id = os.environ.get("FINMIND_USER", "")
 password = os.environ.get("FINMIND_PASSWORD", "")
@@ -146,6 +147,29 @@ def test_taiwan_stock_info(data_loader):
     )
 
 
+def test_taiwan_stock_info_with_warrant(data_loader):
+    stock_info = data_loader.taiwan_stock_info_with_warrant()
+    assert_data(
+        stock_info,
+        ["industry_category", "stock_id", "stock_name", "type", "date"],
+    )
+    assert len(stock_info) > 10000
+
+
+def test_taiwan_securities_trader_info(data_loader):
+    securities_trader_info = data_loader.taiwan_securities_trader_info()
+    assert_data(
+        securities_trader_info,
+        [
+            "securities_trader_id",
+            "securities_trader",
+            "date",
+            "address",
+            "phone",
+        ],
+    )
+
+
 def test_taiwan_stock_daily(data_loader):
     stock_price = data_loader.taiwan_stock_daily(
         "2330", "2018-01-01", "2021-03-06"
@@ -168,41 +192,25 @@ def test_taiwan_stock_daily(data_loader):
 
 
 def test_taiwan_stock_daily_adj(data_loader):
-    stock_id = "2330"
-    start_date = "2019-04-01"
-    end_date = "2021-03-06"
-    data = data_loader.taiwan_stock_daily_adj(
-        stock_id=stock_id, start_date=start_date, end_date=end_date
-    ).iloc[0][["open", "close", "max", "min"]]
-
-    assert all(
-        data
-        == pd.Series(
-            {"open": 231.35, "close": 228.11, "max": 231.35, "min": 228.11}
-        )
+    stock_price = data_loader.taiwan_stock_daily_adj(
+        stock_id="2330", start_date="2018-01-01", end_date="2021-03-06"
     )
 
-
-def test_taiwan_stock_daily_adj_2(data_loader):
-    stock_id = "3288"
-    start_date = "2005-01-01"
-    end_date = "2021-05-28"
-    df_size = data_loader.taiwan_stock_daily_adj(
-        stock_id=stock_id, start_date=start_date, end_date=end_date
-    ).size
-
-    assert df_size == 36990
-
-
-def test_taiwan_stock_daily_adj_empty_dataframe(data_loader):
-    stock_id = "1230"
-    start_date = "2015-01-01"
-    end_date = "2021-06-19"
-    df_size = data_loader.taiwan_stock_daily_adj(
-        stock_id=stock_id, start_date=start_date, end_date=end_date
-    ).size
-
-    assert df_size == 0
+    assert_data(
+        stock_price,
+        [
+            "date",
+            "stock_id",
+            "Trading_Volume",
+            "Trading_money",
+            "open",
+            "max",
+            "min",
+            "close",
+            "spread",
+            "Trading_turnover",
+        ],
+    )
 
 
 def test_taiwan_stock_tick(data_loader):
@@ -243,6 +251,22 @@ def test_taiwan_stock_day_trading(data_loader):
             "Volume",
             "BuyAmount",
             "SellAmount",
+        ],
+    )
+
+
+def test_taiwan_stock_government_bank_buy_sell(data_loader):
+    data = data_loader.taiwan_stock_government_bank_buy_sell("2023-01-10")
+    assert_data(
+        data,
+        [
+            "date",
+            "stock_id",
+            "buy_amount",
+            "sell_amount",
+            "buy",
+            "sell",
+            "bank_name",
         ],
     )
 
@@ -499,5 +523,657 @@ def test_taiwan_stock_total_return_index(data_loader):
             "price",
             "index_id",
             "date",
+        ],
+    )
+
+
+def test_taiwan_stock_market_value_weight(data_loader):
+    data = data_loader.taiwan_stock_market_value_weight(
+        stock_id="2330", start_date="2024-01-01", end_date="2025-01-01"
+    )
+    assert_data(
+        data,
+        [
+            "rank",
+            "stock_id",
+            "stock_name",
+            "weight_per",
+            "date",
+            "type",
+        ],
+    )
+
+
+def test_taiwan_option_institutional_investors(data_loader):
+    data = data_loader.taiwan_option_institutional_investors(
+        data_id="TXO", start_date="2019-04-03", end_date="2019-04-04"
+    )
+    assert_data(
+        data,
+        [
+            "option_id",
+            "date",
+            "call_put",
+            "institutional_investors",
+            "long_deal_volume",
+            "long_deal_amount",
+            "short_deal_volume",
+            "short_deal_amount",
+            "long_open_interest_balance_volume",
+            "long_open_interest_balance_amount",
+            "short_open_interest_balance_volume",
+            "short_open_interest_balance_amount",
+        ],
+    )
+
+
+def test_taiwan_futures_institutional_investors(data_loader):
+    data = data_loader.taiwan_futures_institutional_investors(
+        data_id="TX", start_date="2019-04-03", end_date="2019-04-04"
+    )
+    assert_data(
+        data,
+        [
+            "futures_id",
+            "date",
+            "institutional_investors",
+            "long_deal_volume",
+            "long_deal_amount",
+            "short_deal_volume",
+            "short_deal_amount",
+            "long_open_interest_balance_volume",
+            "long_open_interest_balance_amount",
+            "short_open_interest_balance_volume",
+            "short_open_interest_balance_amount",
+        ],
+    )
+
+
+def test_taiwan_option_institutional_investors_after_hours(data_loader):
+    data = data_loader.taiwan_option_institutional_investors_after_hours(
+        data_id="TXO", start_date="2021-10-12", end_date="2021-11-12"
+    )
+    assert_data(
+        data,
+        [
+            "option_id",
+            "date",
+            "call_put",
+            "institutional_investors",
+            "long_deal_volume",
+            "long_deal_amount",
+            "short_deal_volume",
+            "short_deal_amount",
+        ],
+    )
+
+
+def test_taiwan_futures_institutional_investors_after_hours(data_loader):
+    data = data_loader.taiwan_futures_institutional_investors_after_hours(
+        data_id="TX", start_date="2021-10-12", end_date="2021-11-12"
+    )
+    assert_data(
+        data,
+        [
+            "futures_id",
+            "date",
+            "institutional_investors",
+            "long_deal_volume",
+            "long_deal_amount",
+            "short_deal_volume",
+            "short_deal_amount",
+        ],
+    )
+
+
+def test_taiwan_stock_capital_reduction_reference_price(data_loader):
+    data = data_loader.taiwan_stock_capital_reduction_reference_price(
+        stock_id="2327", start_date="2000-01-01", end_date="2021-04-01"
+    )
+    assert_data(
+        data,
+        [
+            "date",
+            "stock_id",
+            "ClosingPriceonTheLastTradingDay",
+            "PostReductionReferencePrice",
+            "LimitUp",
+            "LimitDown",
+            "OpeningReferencePrice",
+            "ExrightReferencePrice",
+            "ReasonforCapitalReduction",
+        ],
+    )
+
+
+def test_taiwan_stock_market_value(data_loader):
+    data = data_loader.taiwan_stock_market_value(
+        stock_id="2330", start_date="2000-01-01", end_date="2023-06-01"
+    )
+    assert_data(
+        data,
+        [
+            "date",
+            "stock_id",
+            "market_value",
+        ],
+    )
+
+
+def test_taiwan_stock_10year(data_loader):
+    data = data_loader.taiwan_stock_10year(
+        stock_id="2330", start_date="2000-01-01", end_date="2023-06-01"
+    )
+    assert_data(
+        data,
+        [
+            "date",
+            "stock_id",
+            "close",
+        ],
+    )
+
+
+def test_taiwan_stock_weekly(data_loader):
+    data = data_loader.taiwan_stock_weekly(
+        stock_id="2330", start_date="2000-01-01", end_date="2023-06-01"
+    )
+    assert_data(
+        data,
+        [
+            "stock_id",
+            "yweek",
+            "max",
+            "min",
+            "trading_volume",
+            "trading_money",
+            "trading_turnover",
+            "date",
+            "close",
+            "open",
+            "spread",
+        ],
+    )
+
+
+def test_taiwan_stock_monthly(data_loader):
+    data = data_loader.taiwan_stock_monthly(
+        stock_id="2330", start_date="2000-01-01", end_date="2023-06-01"
+    )
+    assert_data(
+        data,
+        [
+            "stock_id",
+            "ymonth",
+            "max",
+            "min",
+            "trading_volume",
+            "trading_money",
+            "trading_turnover",
+            "date",
+            "close",
+            "open",
+            "spread",
+        ],
+    )
+
+
+def test_taiwan_stock_bar(data_loader):
+    data = data_loader.taiwan_stock_bar(stock_id="2330", date="2023-01-05")
+    assert_data(
+        data,
+        [
+            "date",
+            "minute",
+            "stock_id",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+        ],
+    )
+
+
+def test_taiwan_stock_kbar(data_loader):
+    data = data_loader.taiwan_stock_kbar(stock_id="2330", date="2023-01-05")
+    assert_data(
+        data,
+        [
+            "date",
+            "minute",
+            "stock_id",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+        ],
+    )
+
+
+def test_taiwan_stock_kbar_async(data_loader):
+    date = datetime.datetime.today().strftime("%Y-%m-%d")
+    taiwan_stock_price_df = data_loader.taiwan_stock_daily(start_date=date)
+    # 只拿取當天交易量大於 0 的股票
+    taiwan_stock_price_df = taiwan_stock_price_df[
+        ["stock_id", "Trading_Volume"]
+    ]
+    taiwan_stock_price_df = taiwan_stock_price_df[
+        taiwan_stock_price_df["Trading_Volume"] > 0
+    ]
+    # 拿取當天上市櫃，industry_category 非大盤, index, 所有證券的股票 ID
+    # 因為這些股票沒有分點
+    stock_info_df = data_loader.taiwan_stock_info()
+    stock_info = stock_info_df[stock_info_df["type"].isin(["twse", "tpex"])]
+    cate_mask = stock_info["industry_category"].isin(
+        ["大盤", "Index", "所有證券"]
+    )
+    id_mask = stock_info["stock_id"].isin(["TAIEX", "TPEx"])
+    stock_info = stock_info[~(cate_mask | id_mask)]
+    stock_info = stock_info.merge(
+        taiwan_stock_price_df, how="inner", on=["stock_id"]
+    )
+    stock_info = stock_info[~stock_info["stock_id"].isin(taiwan_stock_price_df)]
+    stock_id_list = list(set(stock_info["stock_id"].values))[:30]
+    start = datetime.datetime.now()
+    df = data_loader.taiwan_stock_kbar(
+        stock_id_list=stock_id_list,
+        date=date,
+        use_async=True,
+    )
+    cost = datetime.datetime.now() - start
+    print(cost)
+    # 0:01:05.227280
+    assert len(df) > 1000
+    assert len(df["stock_id"].unique()) > 1
+
+
+def test_taiwan_stock_delisting(data_loader):
+    data = data_loader.taiwan_stock_delisting(stock_id="1230")
+    assert_data(
+        data,
+        [
+            "date",
+            "stock_id",
+            "stock_name",
+        ],
+    )
+
+
+def test_taiwan_total_exchange_margin_maintenance(data_loader):
+    data = data_loader.taiwan_total_exchange_margin_maintenance(
+        start_date="2024-01-01", end_date="2024-01-20"
+    )
+    assert_data(
+        data,
+        [
+            "date",
+            "TotalExchangeMarginMaintenance",
+        ],
+    )
+
+
+def test_us_stock_info(data_loader):
+    data = data_loader.us_stock_info()
+    assert_data(
+        data,
+        [
+            "date",
+            "stock_id",
+            "Country",
+            "IPOYear",
+            "MarketCap",
+            "Subsector",
+            "stock_name",
+        ],
+    )
+
+
+def test_us_stock_price(data_loader):
+    data = data_loader.us_stock_price(
+        stock_id="VOO", start_date="2023-01-01", end_date="2023-01-31"
+    )
+    assert_data(
+        data,
+        [
+            "date",
+            "stock_id",
+            "Adj_Close",
+            "Close",
+            "High",
+            "Low",
+            "Open",
+            "Volume",
+        ],
+    )
+
+
+def test_taiwan_stock_convertible_bond_info(data_loader):
+    df = data_loader.taiwan_stock_convertible_bond_info()
+    assert_data(
+        df,
+        [
+            "cb_id",
+            "cb_name",
+            "InitialDateOfConversion",
+            "DueDateOfConversion",
+            "IssuanceAmount",
+        ],
+    )
+
+
+def test_taiwan_stock_convertible_bond_daily(data_loader):
+    df = data_loader.taiwan_stock_convertible_bond_daily(
+        cb_id="15131",
+        start_date="2020-04-01",
+        end_date="2020-04-10",
+    )
+    assert_data(
+        df,
+        [
+            "cb_id",
+            "cb_name",
+            "transaction_type",
+            "close",
+            "change",
+            "open",
+            "max",
+            "min",
+            "no_of_transactions",
+            "unit",
+            "trading_value",
+            "avg_price",
+            "next_ref_price",
+            "next_max_limit",
+            "next_min_limit",
+            "date",
+        ],
+    )
+
+
+def test_taiwan_stock_convertible_bond_institutional_investors(data_loader):
+    df = data_loader.taiwan_stock_convertible_bond_institutional_investors(
+        cb_id="15131",
+        start_date="2020-04-01",
+        end_date="2020-04-10",
+    )
+    assert_data(
+        df,
+        [
+            "Foreign_Investor_Buy",
+            "Foreign_Investor_Sell",
+            "Foreign_Investor_Overbuy",
+            "Investment_Trust_Buy",
+            "Investment_Trust_Sell",
+            "Investment_Trust_Overbuy",
+            "Dealer_self_Buy",
+            "Dealer_self_Sell",
+            "Dealer_self_Overbuy",
+            "Total_Overbuy",
+            "cb_id",
+            "cb_name",
+            "date",
+        ],
+    )
+
+
+def test_taiwan_stock_convertible_bond_daily_overview(data_loader):
+    df = data_loader.taiwan_stock_convertible_bond_daily_overview(
+        cb_id="15131",
+        start_date="2020-04-01",
+        end_date="2020-04-10",
+    )
+    assert_data(
+        df,
+        [
+            "cb_id",
+            "cb_name",
+            "date",
+            "InitialDateOfConversion",
+            "DueDateOfConversion",
+            "InitialDateOfStopConversion",
+            "DueDateOfStopConversion",
+            "ConversionPrice",
+            "NextEffectiveDateOfConversionPrice",
+            "LatestInitialDateOfPut",
+            "LatestDueDateOfPut",
+            "LatestPutPrice",
+            "InitialDateOfEarlyRedemption",
+            "DueDateOfEarlyRedemption",
+            "EarlyRedemptionPrice",
+            "DateOfDelisted",
+            "IssuanceAmount",
+            "OutstandingAmount",
+            "ReferencePrice",
+            "PriceOfUnderlyingStock",
+            "InitialDateOfSuspension",
+            "DueDateOfSuspension",
+            "CouponRate",
+        ],
+    )
+
+
+def test_taiwan_stock_margin_short_sale_suspension(data_loader):
+    df = data_loader.taiwan_stock_margin_short_sale_suspension(
+        stock_id="2330",
+        start_date="2020-04-01",
+        end_date="2020-04-10",
+    )
+    assert_data(
+        df,
+        [
+            "stock_id",
+            "date",
+            "end_date",
+            "reason",
+        ],
+    )
+
+
+def test_taiwan_stock_trading_daily_report_secid_agg(data_loader):
+    df = data_loader.taiwan_stock_trading_daily_report_secid_agg(
+        stock_id="2330",
+        securities_trader_id="1020",
+        start_date="2024-07-30",
+        end_date="2024-07-31",
+    )
+    assert_data(
+        df,
+        [
+            "securities_trader",
+            "securities_trader_id",
+            "stock_id",
+            "date",
+            "buy_volume",
+            "sell_volume",
+            "buy_price",
+            "sell_price",
+        ],
+    )
+
+
+def test_taiwan_stock_trading_daily_report(data_loader):
+    df = data_loader.taiwan_stock_trading_daily_report(
+        stock_id="2330",
+        securities_trader_id="1020",
+        date="2024-07-30",
+    )
+    assert_data(
+        df,
+        [
+            "securities_trader",
+            "price",
+            "buy",
+            "sell",
+            "securities_trader_id",
+            "stock_id",
+            "date",
+        ],
+    )
+
+
+def test_taiwan_stock_trading_daily_report_async(data_loader):
+    date = datetime.datetime.today().strftime("%Y-%m-%d")
+    taiwan_stock_price_df = data_loader.taiwan_stock_daily(start_date=date)
+    # 只拿取當天交易量大於 0 的股票
+    taiwan_stock_price_df = taiwan_stock_price_df[
+        ["stock_id", "Trading_Volume"]
+    ]
+    taiwan_stock_price_df = taiwan_stock_price_df[
+        taiwan_stock_price_df["Trading_Volume"] > 0
+    ]
+    # 拿取當天上市櫃，industry_category 非大盤, index, 所有證券的股票 ID
+    # 因為這些股票沒有分點
+    stock_info_df = data_loader.taiwan_stock_info()
+    stock_info = stock_info_df[stock_info_df["type"].isin(["twse", "tpex"])]
+    cate_mask = stock_info["industry_category"].isin(
+        ["大盤", "Index", "所有證券"]
+    )
+    id_mask = stock_info["stock_id"].isin(["TAIEX", "TPEx"])
+    stock_info = stock_info[~(cate_mask | id_mask)]
+    stock_info = stock_info.merge(
+        taiwan_stock_price_df, how="inner", on=["stock_id"]
+    )
+    stock_info = stock_info[
+        ~stock_info["stock_id"].isin(taiwan_stock_price_df)
+    ].head(5)
+    stock_id_list = list(set(stock_info["stock_id"].values))[:5]
+    logger.info(f"len: {len(stock_id_list)}")  # 2176
+    start = datetime.datetime.now()
+    df = data_loader.taiwan_stock_trading_daily_report(
+        stock_id_list=stock_id_list,
+        date=date,
+        use_async=True,
+    )
+    cost = datetime.datetime.now() - start
+    print(cost)
+    # 0:08:22.485726
+    assert len(df) > 1000
+    assert len(df["stock_id"].unique()) > 1
+
+
+def test_taiwan_futures_open_interest_large_traders(data_loader):
+    df = data_loader.taiwan_futures_open_interest_large_traders(
+        futures_id="TJF",
+        start_date="2024-09-01",
+        end_date="2024-09-02",
+    )
+    assert_data(
+        df,
+        [
+            "name",
+            "contract_type",
+            "buy_top5_trader_open_interest",
+            "buy_top5_trader_open_interest_per",
+            "buy_top10_trader_open_interest",
+            "buy_top10_trader_open_interest_per",
+            "sell_top5_trader_open_interest",
+            "sell_top5_trader_open_interest_per",
+            "sell_top10_trader_open_interest",
+            "sell_top10_trader_open_interest_per",
+            "market_open_interest",
+            "buy_top5_specific_open_interest",
+            "buy_top5_specific_open_interest_per",
+            "buy_top10_specific_open_interest",
+            "buy_top10_specific_open_interest_per",
+            "sell_top5_specific_open_interest",
+            "sell_top5_specific_open_interest_per",
+            "sell_top10_specific_open_interest",
+            "sell_top10_specific_open_interest_per",
+            "date",
+            "futures_id",
+        ],
+    )
+
+
+def test_taiwan_option_open_interest_large_traders(data_loader):
+    df = data_loader.taiwan_option_open_interest_large_traders(
+        option_id="CA",
+        start_date="2024-09-01",
+        end_date="2024-09-02",
+    )
+    assert_data(
+        df,
+        [
+            "contract_type",
+            "buy_top5_trader_open_interest",
+            "buy_top5_trader_open_interest_per",
+            "buy_top10_trader_open_interest",
+            "buy_top10_trader_open_interest_per",
+            "sell_top5_trader_open_interest",
+            "sell_top5_trader_open_interest_per",
+            "sell_top10_trader_open_interest",
+            "sell_top10_trader_open_interest_per",
+            "market_open_interest",
+            "buy_top5_specific_open_interest",
+            "buy_top5_specific_open_interest_per",
+            "buy_top10_specific_open_interest",
+            "buy_top10_specific_open_interest_per",
+            "sell_top5_specific_open_interest",
+            "sell_top5_specific_open_interest_per",
+            "sell_top10_specific_open_interest",
+            "sell_top10_specific_open_interest_per",
+            "date",
+            "put_call",
+            "name",
+            "option_id",
+        ],
+    )
+
+
+def test_taiwan_business_indicator(data_loader):
+    df = data_loader.taiwan_business_indicator(
+        start_date="2024-04-01",
+        end_date="2024-12-01",
+    )
+    assert_data(
+        df,
+        [
+            "date",
+            "leading",
+            "leading_notrend",
+            "coincident",
+            "coincident_notrend",
+            "lagging",
+            "lagging_notrend",
+            "monitoring",
+            "monitoring_color",
+        ],
+    )
+
+
+def test_taiwan_stock_disposition_securities_period(data_loader):
+    df = data_loader.taiwan_stock_disposition_securities_period(
+        start_date="2025-01-01",
+        end_date="2025-02-01",
+        stock_id="6477",
+    )
+    assert_data(
+        df,
+        [
+            "date",
+            "stock_id",
+            "stock_name",
+            "disposition_cnt",
+            "condition",
+            "measure",
+            "period_start",
+            "period_end",
+        ],
+    )
+
+
+def test_cnn_fear_greed_index(data_loader):
+    df = data_loader.cnn_fear_greed_index(
+        start_date="2020-04-01",
+        end_date="2020-04-10",
+    )
+    assert_data(
+        df,
+        [
+            "date",
+            "fear_greed",
+            "fear_greed_emotion",
         ],
     )

@@ -32,6 +32,7 @@ class Dataset(str, Enum):
     USStockPrice = "USStockPrice"
     TaiwanStockDividendResult = "TaiwanStockDividendResult"
     TaiwanStockInfo = "TaiwanStockInfo"
+    TaiwanStockInfoWithWarrant = "TaiwanStockInfoWithWarrant"
     TaiwanStockSecuritiesLending = "TaiwanStockSecuritiesLending"
     TaiwanFutOptTickInfo = "TaiwanFutOptTickInfo"
     TaiwanFutOptDailyInfo = "TaiwanFutOptDailyInfo"
@@ -51,7 +52,14 @@ class Dataset(str, Enum):
     )
     TaiwanFutOptTick = "TaiwanFutOptTick"
     TaiwanVariousIndicators5Seconds = "TaiwanVariousIndicators5Seconds"
-    TaiwanFutOptInstitutionalInvestors = "TaiwanFutOptInstitutionalInvestors"
+    TaiwanFuturesInstitutionalInvestors = "TaiwanFuturesInstitutionalInvestors"
+    TaiwanOptionInstitutionalInvestors = "TaiwanOptionInstitutionalInvestors"
+    TaiwanFuturesInstitutionalInvestorsAfterHours = (
+        "TaiwanFuturesInstitutionalInvestorsAfterHours"
+    )
+    TaiwanOptionInstitutionalInvestorsAfterHours = (
+        "TaiwanOptionInstitutionalInvestorsAfterHours"
+    )
     TaiwanFuturesDealerTradingVolumeDaily = (
         "TaiwanFuturesDealerTradingVolumeDaily"
     )
@@ -62,6 +70,50 @@ class Dataset(str, Enum):
     USStockPriceMinute = "USStockPriceMinute"
     TaiwanStockDayTrading = "TaiwanStockDayTrading"
     TaiwanStockEvery5SecondsIndex = "TaiwanStockEvery5SecondsIndex"
+    TaiwanStockCapitalReductionReferencePrice = (
+        "TaiwanStockCapitalReductionReferencePrice"
+    )
+    TaiwanStockGovernmentBankBuySell = "TaiwanStockGovernmentBankBuySell"
+    TaiwanSecuritiesTraderInfo = "TaiwanSecuritiesTraderInfo"
+    TaiwanStockMarketValue = "TaiwanStockMarketValue"
+    TaiwanStock10Year = "TaiwanStock10Year"
+    TaiwanStockTickSnapshot = "taiwan_stock_tick_snapshot"
+    TaiwanFuturesSnapshot = "taiwan_futures_snapshot"
+    TaiwanOptionsSnapshot = "taiwan_options_snapshot"
+    TaiwanStockPriceAdj = "TaiwanStockPriceAdj"
+    TaiwanStockKBar = "TaiwanStockKBar"
+    TaiwanStockDelisting = "TaiwanStockDelisting"
+    TaiwanStockConvertibleBondInfo = "TaiwanStockConvertibleBondInfo"
+    TaiwanStockConvertibleBondDaily = "TaiwanStockConvertibleBondDaily"
+    TaiwanStockConvertibleBondInstitutionalInvestors = (
+        "TaiwanStockConvertibleBondInstitutionalInvestors"
+    )
+    TaiwanStockConvertibleBondDailyOverview = (
+        "TaiwanStockConvertibleBondDailyOverview"
+    )
+    TaiwanStockMarginShortSaleSuspension = (
+        "TaiwanStockMarginShortSaleSuspension"
+    )
+    TaiwanTotalExchangeMarginMaintenance = (
+        "TaiwanTotalExchangeMarginMaintenance"
+    )
+    TaiwanStockWeekPrice = "TaiwanStockWeekPrice"
+    TaiwanStockMonthPrice = "TaiwanStockMonthPrice"
+    TaiwanStockTradingDailyReportSecIdAgg = (
+        "TaiwanStockTradingDailyReportSecIdAgg"
+    )
+    TaiwanStockTradingDailyReport = "TaiwanStockTradingDailyReport"
+    TaiwanOptionOpenInterestLargeTraders = (
+        "TaiwanOptionOpenInterestLargeTraders"
+    )
+    TaiwanFuturesOpenInterestLargeTraders = (
+        "TaiwanFuturesOpenInterestLargeTraders"
+    )
+    TaiwanStockMarketValueWeight = "TaiwanStockMarketValueWeight"
+    TaiwanBusinessIndicator = "TaiwanBusinessIndicator"
+    TaiwanStockDispositionSecuritiesPeriod = (
+        "TaiwanStockDispositionSecuritiesPeriod"
+    )
 
 
 class Version(str, Enum):

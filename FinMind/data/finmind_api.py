@@ -9,38 +9,10 @@ import urllib3
 from loguru import logger
 
 from FinMind.schema.data import Dataset
+from FinMind.utility.request import async_request_get, request_get
 
 logger.remove()
 logger.add(sys.stderr, level="INFO")
-
-
-def request_get(
-    url: str,
-    params: typing.Dict[str, typing.Union[int, str, float]],
-    timeout: int = None,
-):
-    for i in range(10):
-        try:
-            response = requests.get(
-                url, verify=True, params=params, timeout=timeout
-            )
-            break
-        except requests.Timeout as exc:
-            raise Exception("Timeout")
-        except (
-            requests.ConnectionError,
-            ssl.SSLError,
-            urllib3.exceptions.ReadTimeoutError,
-            urllib3.exceptions.ProtocolError,
-        ) as exc:
-            logger.warning(f"{exc}, retry {i} and sleep {i * 0.1} seonds")
-            time.sleep(i * 0.1)
-    if response.json()["msg"] == "success" and response.status_code == 200:
-        pass
-    else:
-        logger.error(params)
-        raise Exception(response.text)
-    return response
 
 
 class FinMindApi:
@@ -52,6 +24,32 @@ class FinMindApi:
         self.__api_version = "v4"
         self.__device = "package"
         self.__valid_versions = ["v3", "v4"]
+
+    @property
+    def api_usage(
+        self,
+        timeout: int = 5,
+    ) -> int:
+        params = dict(
+            token=self.__api_token,
+        )
+        url = "https://api.web.finmindtrade.com/v2/user_info"
+        logger.debug(params)
+        response = request_get(url, params, timeout).json()
+        return response.get("user_count", 0)
+
+    @property
+    def api_usage_limit(
+        self,
+        timeout: int = 5,
+    ) -> int:
+        params = dict(
+            token=self.__api_token,
+        )
+        url = "https://api.web.finmindtrade.com/v2/user_info"
+        logger.debug(params)
+        response = request_get(url, params, timeout).json()
+        return response.get("api_request_limit", 0)
 
     @property
     def api_version(self):
@@ -78,9 +76,10 @@ class FinMindApi:
             "device": self.__device,
         }
         url = f"{self.__api_url}/{self.__api_version}/login"
-        login_info = requests.post(url, data=payload).json()
+        resp = requests.post(url, data=payload)
+        login_info = resp.json()
         logger.debug(login_info)
-        if login_info.get("status", 0) == 200:
+        if resp.status_code == 200:
             self.__api_token = login_info.get("token", "")
             self.__user_id = user_id
             self.__password = password
@@ -106,13 +105,108 @@ class FinMindApi:
                 params["start_date"] = params.pop("date")
         return params
 
+    def _compatible_endpoints_param(self, params: str) -> dict:
+        if params["dataset"] in ("TaiwanStockTradingDailyReport"):
+            if "start_date" in params:
+                params["date"] = params.pop("start_date")
+        return params
+
+    def _dispatcher_url(self, dataset: str) -> str:
+        base_url = f"{self.__api_url}/{self.__api_version}"
+        url_mapping = {
+            "TaiwanStockTradingDailyReportSecIdAgg": f"{base_url}/taiwan_stock_trading_daily_report_secid_agg",
+            "TaiwanStockTradingDailyReport": f"{base_url}/taiwan_stock_trading_daily_report",
+        }
+        return url_mapping.get(dataset, f"{base_url}/data")
+
     def get_data(
         self,
         dataset: Dataset,
         data_id: str = "",
+        securities_trader_id: str = "",
         stock_id: str = "",
         start_date: str = "",
+        data_id_list: typing.List[str] = None,
+        # securities_trader_id_list: typing.List[str] = None,
         end_date: str = "",
+        timeout: int = None,
+        use_async: bool = False,
+    ) -> pd.DataFrame:
+        """
+        :param params: finmind api參數
+        :return:
+        """
+        if use_async:
+            return self._get_data_with_async(
+                dataset=dataset,
+                data_id_list=data_id_list,
+                # securities_trader_id_list=securities_trader_id_list,
+                start_date=start_date,
+                end_date=end_date,
+            )
+        else:
+            logger.info(f"download {dataset}, data_id: {data_id}")
+            params = dict(
+                dataset=dataset,
+                data_id=data_id,
+                securities_trader_id=securities_trader_id,
+                stock_id=stock_id,
+                start_date=start_date,
+                end_date=end_date,
+                user_id=self.__user_id,
+                password=self.__password,
+                token=self.__api_token,
+                device=self.__device,
+            )
+            params = self._compatible_api_version(params)
+            params = self._compatible_endpoints_param(params)
+            url = self._dispatcher_url(dataset)
+            logger.debug(params)
+            response = request_get(url, params, timeout).json()
+            return pd.DataFrame(response["data"])
+
+    def _get_data_with_async(
+        self,
+        dataset: Dataset,
+        data_id_list: typing.List[str] = None,
+        # securities_trader_id_list: typing.List[str] = None,
+        start_date: str = "",
+        end_date: str = "",
+        timeout: int = None,
+    ) -> pd.DataFrame:
+        """
+        :param params: finmind api參數
+        :return:
+        """
+        logger.info(f"download {dataset}, data_id: {data_id_list}")
+        params_list = [
+            self._compatible_endpoints_param(
+                self._compatible_api_version(
+                    params=dict(
+                        dataset=dataset,
+                        data_id=data_id,
+                        start_date=start_date,
+                        end_date=end_date,
+                        user_id=self.__user_id,
+                        password=self.__password,
+                        token=self.__api_token,
+                        device=self.__device,
+                    )
+                )
+            )
+            for data_id in data_id_list
+        ]
+        url = self._dispatcher_url(dataset)
+        resp_list = async_request_get(url, params_list, timeout)
+        data_list = []
+        [data_list.extend(resp.json()["data"]) for resp in resp_list]
+        df = pd.DataFrame(data_list)
+        return df
+
+    def get_taiwan_stock_tick_snapshot(
+        self,
+        dataset: Dataset,
+        data_id: typing.Union[str, typing.List[str]] = "",
         timeout: int = None,
     ) -> pd.DataFrame:
         """
@@ -122,16 +216,63 @@ class FinMindApi:
         params = dict(
             dataset=dataset,
             data_id=data_id,
-            stock_id=stock_id,
-            start_date=start_date,
-            end_date=end_date,
             user_id=self.__user_id,
             password=self.__password,
             token=self.__api_token,
             device=self.__device,
         )
         params = self._compatible_api_version(params)
-        url = f"{self.__api_url}/{self.__api_version}/data"
+        url = (
+            f"{self.__api_url}/{self.__api_version}/taiwan_stock_tick_snapshot"
+        )
+        logger.debug(params)
+        response = request_get(url, params, timeout).json()
+        return pd.DataFrame(response["data"])
+
+    def get_taiwan_futures_snapshot(
+        self,
+        dataset: Dataset,
+        data_id: str = "",
+        timeout: int = None,
+    ) -> pd.DataFrame:
+        """
+        :param params: finmind api參數
+        :return:
+        """
+        params = dict(
+            dataset=dataset,
+            data_id=data_id,
+            user_id=self.__user_id,
+            password=self.__password,
+            token=self.__api_token,
+            device=self.__device,
+        )
+        params = self._compatible_api_version(params)
+        url = f"{self.__api_url}/{self.__api_version}/taiwan_futures_snapshot"
+        logger.debug(params)
+        response = request_get(url, params, timeout).json()
+        return pd.DataFrame(response["data"])
+
+    def get_taiwan_options_snapshot(
+        self,
+        dataset: Dataset,
+        data_id: str = "",
+        timeout: int = None,
+    ) -> pd.DataFrame:
+        """
+        :param params: finmind api參數
+        :return:
+        """
+        params = dict(
+            dataset=dataset,
+            data_id=data_id,
+            user_id=self.__user_id,
+            password=self.__password,
+            token=self.__api_token,
+            device=self.__device,
+        )
+        params = self._compatible_api_version(params)
+        url = f"{self.__api_url}/{self.__api_version}/taiwan_options_snapshot"
         logger.debug(params)
         response = request_get(url, params, timeout).json()
         return pd.DataFrame(response["data"])
